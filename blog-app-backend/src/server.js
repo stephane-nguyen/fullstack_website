@@ -1,75 +1,66 @@
 import express from 'express';
+import cors from 'cors';
 //import { MongoClient } from 'mongodb';
-import {db, connectToDatabase} from './db.js';
+import { db, connectToDatabase } from './db.js';
 
 const app = express();
 app.use(express.json());
 
-app.get('/api/articles/:name', async (req,res) => {
-    const {name}=req.params;
+app.use(
+    cors({
+        origin: "http://localhost:3000"
+    })
+);
+app.get('/api/articles/:name', async (req, res) => {
+    const { name } = req.params;
+
+    /**moved this block of code into db.js 
+
     // const client=new MongoClient('mongodb://127.0.0.1:27017');
     // await client.connect();
 
     // const DB_NAME = 'react-blog-db';
     // const db=client.db(DB_NAME);
 
+    */
     const article = await db.collection('articles').findOne({ name });
-    if(article){
-        //send back to the client, res.json better than res.send as we send back json data, not string
+    if (article) {
+        //send back response to the client, res.json bettFer than res.send as we send back json data, not string
         res.json(article);
     } else {
         res.sendStatus(404);
     }
 });
 
-// IN MEMORY DB //
-
-// let articlesInfo=[
-//     {
-//         name: 'learn-react',
-//         upvotes:0,
-//         comments:[]
-//     },
-//     {
-//         name: 'learn-node',
-//         upvotes:0,
-//         comments:[]
-//     },
-//     {
-//         name: 'mongdb',
-//         upvotes:0,
-//         comments:[]
-//     },
-// ]
-
-app.put('/api/articles/:name/upvote', async (req,res)=>{
+app.put('/api/articles/:name/upvote', async (req, res) => {
     const { name } = req.params;
-    
-    await db.collection('articles').updateOne({name}, {
+
+    await db.collection('articles').updateOne({ name }, {
         //we specify mongodb we increment upvotes by 1 
         $inc: { upvotes: 1 },
     });
-    const article = await db.collection('articles').findOne({name});
-    if(article) {
-        res.send(`the ${name} article now has ${article.upvotes} upvotes!`);
+    const article = await db.collection('articles').findOne({ name });
+    if (article) {
+        res.json(article);
+        //res.send(`the ${name} article now has ${article.upvotes} upvotes!`);
     } else {
         res.send("That article doesnt exist")
     }
 });
 
-app.post('/api/articles/:name/comments', async (req,res) => {
-    const {name}=req.params
-    const {postedBy, text}=req.body
+app.post('/api/articles/:name/comments', async (req, res) => {
+    const { name } = req.params
+    const { postedBy, text } = req.body
 
-    await db.collection('articles').updateOne({name}, {
-        $push: { comments: {postedBy,text} },
+    await db.collection('articles').updateOne({ name }, {
+        $push: { comments: { postedBy, text } },
     })
-    const article = await db.collection('articles').findOne({name});
+    const article = await db.collection('articles').findOne({ name });
     //const article = articlesInfo.find(a => a.name === name);
-    if(article){
+    if (article) {
         //article.comments.push({postedBy,text})
-        res.send(article.comments);
-    } else{
+        res.json(article);
+    } else {
         res.send("That article doesnt exist")
     }
 })
