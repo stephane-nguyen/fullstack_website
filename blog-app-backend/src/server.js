@@ -1,12 +1,18 @@
 import express from 'express';
 import cors from 'cors';
 import { db, connectToDatabase } from './db.js';
+import 'dotenv/config';
 import fs from 'fs';
 import admin from 'firebase-admin';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename);
 
 //setup firebase package
 const credentials = JSON.parse(
-    fs.readFileSync('./credentials.json')
+    fs.readFileSync(path.join(__dirname, '../credentials.json'))
 );
 admin.initializeApp({
     credential: admin.credential.cert(credentials)
@@ -14,6 +20,13 @@ admin.initializeApp({
 
 const app = express();
 app.use(express.json());
+app.use(express.static(path.join(__dirname, '../build')));
+
+//route handler for when we receive our request
+//get all for routes that does not start by api
+app.get(/^(?!\/api).+/, (req, res) => {
+    res.sendFile(path.join(__dirname, '../build/index.html'))
+})
 
 app.use(
     cors({
@@ -27,7 +40,6 @@ app.use(
  * */
 app.use(async (req, res, next) => {
     const { authtoken } = req.headers;
-    console.log("authtoken" + authtoken)
     if (authtoken) {
         try {
             req.user = await admin.auth().verifyIdToken(authtoken);
@@ -42,7 +54,6 @@ app.use(async (req, res, next) => {
 app.get('/api/articles/:name', async (req, res) => {
     const { name } = req.params;
     const { uid } = req.user;
-    console.log("uid" + uid)
     const article = await db.collection('articles').findOne({ name });
 
     if (article) {
@@ -105,11 +116,13 @@ app.post('/api/articles/:name/comments', async (req, res) => {
     }
 });
 
+const PORT = process.env.PORT || 8080;
+
 connectToDatabase(() => {
     console.log('Successfully connected to database');
     //app.listen as a callback to connect to database before
-    app.listen(8080, () => {
-        console.log('Server is listening on port 8080');
+    app.listen(PORT, () => {
+        console.log('Server is listening on port ' + PORT);
     });
 })
 
