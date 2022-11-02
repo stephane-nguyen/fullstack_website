@@ -1,7 +1,16 @@
 import express from 'express';
 import cors from 'cors';
-//import { MongoClient } from 'mongodb';
 import { db, connectToDatabase } from './db.js';
+import fs from 'fs';
+import admin from 'firebase-admin';
+
+//setup firebase package
+const credentials = JSON.parse(
+    fs.readFileSync('./credentials.json')
+);
+admin.initializeApp({
+    credential: admin.credential.cert(credentials)
+});
 
 const app = express();
 app.use(express.json());
@@ -11,67 +20,99 @@ app.use(
         origin: "http://localhost:3000"
     })
 );
+
+/** 
+ * express middleware
+ * automatically load user's info when we receive a request
+ * */
+app.use(async (req, res, next) => {
+    const { authtoken } = req.headers;
+    console.log("authtoken" + authtoken)
+    if (authtoken) {
+        try {
+            req.user = await admin.auth().verifyIdToken(authtoken);
+        } catch (e) {
+            return res.sendStatus(400);
+        }
+    }
+    req.user = req.user || {};
+    next();
+});
+
 app.get('/api/articles/:name', async (req, res) => {
     const { name } = req.params;
-
-    /**moved this block of code into db.js 
-
-    // const client=new MongoClient('mongodb://127.0.0.1:27017');
-    // await client.connect();
-
-    // const DB_NAME = 'react-blog-db';
-    // const db=client.db(DB_NAME);
-
-    */
+    const { uid } = req.user;
+    console.log("uid" + uid)
     const article = await db.collection('articles').findOne({ name });
+
     if (article) {
-        //send back response to the client, res.json bettFer than res.send as we send back json data, not string
+        //if articles.upvoteids does not exist, upvoteIds= []
+        const upvoteIds = article.upvoteIds || [];
+        article.canUpvote = uid && !upvoteIds.includes(uid);
+        console.log(uid + ": " + article.canUpvote)
+        //send back response to the client, res.json better than res.send as we send back json data, not string
         res.json(article);
     } else {
         res.sendStatus(404);
     }
 });
 
+//prevent user to make request to next endpoints if not logged in
+app.use((req, res, next) => {
+    //if has authtoken
+    if (req.user) {
+        next();
+    } else {
+        res.sendStatus(401);
+    }
+})
+
 app.put('/api/articles/:name/upvote', async (req, res) => {
     const { name } = req.params;
-
-    await db.collection('articles').updateOne({ name }, {
-        //we specify mongodb we increment upvotes by 1 
-        $inc: { upvotes: 1 },
-    });
+    const { uid } = req.user;
     const article = await db.collection('articles').findOne({ name });
     if (article) {
-        res.json(article);
-        //res.send(`the ${name} article now has ${article.upvotes} upvotes!`);
+        const upvoteIds = article.upvoteIds || [];
+        const canUpvote = uid && !upvoteIds.includes(uid);
+        if (canUpvote) {
+            await db.collection('articles').updateOne({ name }, {
+                //specify to mongo we increment upvotes by 1
+                $inc: { upvotes: 1 },
+                $push: { upvoteIds: uid },
+            });
+        }
+        const updatedArticle = await db.collection('articles').findOne({ name });
+        res.json(updatedArticle);
     } else {
-        res.send("That article doesnt exist")
+        res.send('That article doesn\'t exist');
     }
 });
 
 app.post('/api/articles/:name/comments', async (req, res) => {
-    const { name } = req.params
-    const { postedBy, text } = req.body
+    const { name } = req.params;
+    const { text } = req.body;
+    const { email } = req.user;
 
     await db.collection('articles').updateOne({ name }, {
-        $push: { comments: { postedBy, text } },
-    })
+        $push: { comments: { postedBy: email, text } },
+    });
     const article = await db.collection('articles').findOne({ name });
-    //const article = articlesInfo.find(a => a.name === name);
+
     if (article) {
-        //article.comments.push({postedBy,text})
         res.json(article);
     } else {
-        res.send("That article doesnt exist")
+        res.send('That article doesn\'t exist!');
     }
-})
+});
 
 connectToDatabase(() => {
-    console.log('Succesfully connected to database');
-    //put app.listen here to connect to database before
+    console.log('Successfully connected to database');
+    //app.listen as a callback to connect to database before
     app.listen(8080, () => {
-        console.log("Server is listening on port 8080")
+        console.log('Server is listening on port 8080');
     });
 })
+
 
 
 
